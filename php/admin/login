@@ -1,0 +1,48 @@
+<?php
+require_once '../config.php';
+require_once '../db.php';
+require_once '../auth.php';
+
+$error = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!validateCSRFToken($_POST['csrf_token'] ?? '')) {
+        $error = 'Invalid CSRF token';
+    } else {
+        $result = $auth->login($_POST['email'], $_POST['password'], 'admin');
+        if ($result['success']) {
+            redirect(BASE_URL . 'admin/dashboard.php');
+        } else {
+            $error = $result['message'];
+        }
+    }
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Login - HS CAR RENTAL</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>body{background:#0a0a0a;color:#fff;}.card{background:#1f1f1f;color:#fff;border-color:#D4AF37;}</style>
+</head>
+<body class="d-flex align-items-center justify-content-center min-vh-100">
+    <div class="card p-4" style="min-width:350px;">
+        <h3 class="text-center mb-3">HS <span style="color:#D4AF37;">CAR</span> RENTAL</h3>
+        <h5 class="text-center mb-4">Admin Login</h5>
+        <?php if ($error): ?><div class="alert alert-danger"><?php echo $error; ?></div><?php endif; ?>
+        <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?php echo generateCSRFToken(); ?>">
+            <div class="mb-3">
+                <label>Email</label>
+                <input type="email" name="email" class="form-control bg-dark text-white" required>
+            </div>
+            <div class="mb-3">
+                <label>Password</label>
+                <input type="password" name="password" class="form-control bg-dark text-white" required>
+            </div>
+            <button type="submit" class="btn w-100" style="background:#D4AF37;color:#000;">Login</button>
+        </form>
+    </div>
+</body>
+</html>
