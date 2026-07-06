@@ -1,0 +1,101 @@
+<?php
+require_once 'db.php';
+
+class Auth {
+    private $db;
+
+    public function __construct($db) {
+        $this->db = $db;
+    }
+
+    public function register($data) {
+        // Validate inputs
+        if (empty($data['full_name']) || empty($data['email']) || empty($data['mobile']) || empty($data['password'])) {
+            return ['success' => false, 'message' => 'All fields are required'];
+        }
+
+        if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
+            return ['success' => false, 'message' => 'Invalid email'];
+        }
+
+        if (!preg_match('/^\d{10}$/', $data['mobile'])) {
+            return ['success' => false, 'message' => 'Invalid mobile number'];
+        }
+
+        if (strlen($data['password']) < 6) {
+            return ['success' => false, 'message' => 'Password must be at least 6 characters'];
+        }
+
+        $passwordHash = password_hash($data['password'], PASSWORD_BCRYPT);
+
+        try {
+            $this->db->query("INSERT INTO users (full_name, email, mobile, password_hash, address, city, state, pincode) VALUES (:full_name, :email, :mobile, :password, :address, :city, :state, :pincode)")
+                ->bind(':full_name', sanitize($data['full_name']))
+                ->bind(':email', sanitize($data['email']))
+                ->bind(':mobile', sanitize($data['mobile']))
+                ->bind(':password', $passwordHash)
+                ->bind(':address', sanitize($data['address'] ?? ''))
+                ->bind(':city', sanitize($data['city'] ?? ''))
+                ->bind(':state', sanitize($data['state'] ?? ''))
+                ->bind(':pincode', sanitize($data['pincode'] ?? ''))
+                ->execute();
+            return ['success' => true, 'message' => 'Registration successful'];
+        } catch (PDOException $e) {
+            if ($e->getCode() == 23000) {
+                return ['success' => false, 'message' => 'Email already registered'];
+            }
+            return ['success' => false, 'message' => 'Registration failed'];
+        }
+    }
+
+    public function login($email, $password, $type = 'user') {
+        $table = $type === 'admin' ? 'admins' : 'users';
+        $user = $this->db->query("SELECT * FROM {$table} WHERE email = :email LIMIT 1")
+            ->bind(':email', sanitize($email))
+            ->fetchOne();
+
+        if (!$user || !password_verify($password, $user['password_hash'])) {
+            return ['success' => false, 'message' => 'Invalid credentials'];
+        }
+
+        if ($type === 'user' && $user['status'] !== 'active') {
+            return ['success' => false, 'message' => 'Account is inactive'];
+        }
+
+        $_SESSION[$type . '_id'] = $user['id'];
+        $_SESSION[$type . '_email'] = $user['email'];
+        $_SESSION[$type . '_name'] = $user['full_name'];
+        $_SESSION[$type . '_role'] = $user['role'] ?? 'user';
+
+        $this->logActivity($type . '_login', $user['id'], $type);
+
+        return ['success' => true, 'message' => 'Login successful', 'user' => $user];
+    }
+
+    public function logout() {
+        session_destroy();
+        return ['success' => true, 'message' => 'Logged out'];
+    }
+
+    public function isLoggedIn($type = 'user') {
+        return isset($_SESSION[$type . '_id']);
+    }
+
+    public function requireAuth($type = 'user') {
+        if (!$this->isLoggedIn($type)) {
+            redirect(BASE_URL . ($type === 'admin' ? 'admin/login.php' : 'login.php'));
+        }
+    }
+
+    public function logActivity($action, $userId = null, $type = 'user') {
+        $column = $type === 'admin' ? 'admin_id' : 'user_id';
+        $this->db->query("INSERT INTO activity_logs ({$column}, action, ip_address, user_agent) VALUES (:id, :action, :ip, :ua)")
+            ->bind(':id', $userId, PDO::PARAM_INT)
+            ->bind(':action', sanitize($action))
+            ->bind(':ip', $_SERVER['REMOTE_ADDR'] ?? null)
+            ->bind(':ua', $_SERVER['HTTP_USER_AGENT'] ?? null)
+            ->execute();
+    }
+}
+
+$auth = new Auth($db);
